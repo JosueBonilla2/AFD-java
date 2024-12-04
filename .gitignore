@@ -49,3 +49,7 @@ Thumbs.db
 coverage.xml
 *.cover
 *.hypothesis/
+
+# IML y XML
+*.iml
+*.xml

@@ -1,8 +1,9 @@
-import re
 import sys
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QAction, QSplitter, QLabel, QCheckBox, QHBoxLayout)
-from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QFont, QIcon
+import re 
+from PyQt5.QtWidgets import QTextEdit, QApplication, QMainWindow, QVBoxLayout, QLabel, QSplitter, QWidget, QAction, QHBoxLayout, QCheckBox 
+from PyQt5.QtGui import QTextCharFormat, QFont, QSyntaxHighlighter, QIcon, QTextCursor 
 from PyQt5.QtCore import Qt, QRegExp
+
 
 class JavaSyntaxHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None):
@@ -118,6 +119,23 @@ class JavaSyntaxHighlighter(QSyntaxHighlighter):
 
         return None, None
 
+class CodeEditor(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.current_block_level = 0
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_BraceLeft:
+            # Insert '{' and a new block
+            self.insertPlainText('{')
+            self.current_block_level += 1
+            cursor = self.textCursor()
+            cursor.insertText('\n\t//metodos\n}\n')
+            cursor.movePosition(QTextCursor.Up, QTextCursor.MoveAnchor, 2)
+            self.setTextCursor(cursor)
+            return
+        super().keyPressEvent(event)
+
 class JavaSyntaxCheckerIDE(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -131,7 +149,7 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         layout = QVBoxLayout()
 
         # Create text area with syntax highlighting
-        self.textEdit = QTextEdit()
+        self.textEdit = CodeEditor()
         self.textEdit.setMouseTracking(True)
 
         # Set larger font
@@ -156,8 +174,8 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         splitter.addWidget(self.textEdit)
         splitter.addWidget(errorLabel)
         splitter.addWidget(self.errorDisplay)
-        splitter.setStretchFactor(0,7)
-        splitter.setStretchFactor(2,3)
+        splitter.setStretchFactor(0, 7)
+        splitter.setStretchFactor(2, 3)
 
         layout.addWidget(splitter)
         container = QWidget()

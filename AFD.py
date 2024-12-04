@@ -1,8 +1,7 @@
-
 import re
 import sys
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QToolTip, QAction, QMessageBox, QSplitter, QLabel, QCheckBox, QHBoxLayout)
-from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QFont, QIcon, QTextCursor
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QVBoxLayout, QWidget, QAction, QSplitter, QLabel, QCheckBox, QHBoxLayout)
+from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QFont, QIcon
 from PyQt5.QtCore import Qt, QRegExp
 
 class JavaSyntaxHighlighter(QSyntaxHighlighter):
@@ -57,7 +56,7 @@ class JavaSyntaxHighlighter(QSyntaxHighlighter):
                 index = expression.indexIn(text, index + length)
 
         # Validate entire text
-        error_range = self._validate_text(text)
+        error_range, correct_option = self._validate_text(text)
         if error_range:
             self.setFormat(error_range[0], error_range[1] - error_range[0], self.errorFormat)
 
@@ -67,7 +66,7 @@ class JavaSyntaxHighlighter(QSyntaxHighlighter):
 
         # Ignore empty lines
         if not text_clean:
-            return None
+            return None, None
 
         # Class and Method Patterns
         class_pattern = r'^(public|private|protected)?\s*class\s+\w+\s*(\{)?$'
@@ -89,24 +88,24 @@ class JavaSyntaxHighlighter(QSyntaxHighlighter):
         # Handle opening and closing braces
         if text_clean == '{':
             self.current_block_level += 1
-            return None
+            return None, None
 
         if text_clean == '}':
             self.current_block_level = max(0, self.current_block_level - 1)
-            return None
+            return None, None
 
         # Validate different contexts
         if re.match(class_pattern, text_clean):
             self.class_parsing_state = True
-            return None
+            return None, None
 
         if re.match(main_method_pattern, text_clean) or re.match(method_pattern, text_clean):
-            return None
+            return None, None
 
         # Validate inside control structures and methods
         if self.current_block_level > 0:
             if any(re.match(pattern, text_clean) for pattern in control_patterns + variable_patterns):
-                return None
+                return None, None
 
         # Additional comprehensive error detection
         if not any([
@@ -115,9 +114,9 @@ class JavaSyntaxHighlighter(QSyntaxHighlighter):
             re.match(main_method_pattern, text_clean),
             any(re.match(pattern, text_clean) for pattern in control_patterns + variable_patterns)
         ]):
-            return (0, len(text))
+            return (0, len(text)), "Expected a valid Java statement"
 
-        return None
+        return None, None
 
 class JavaSyntaxCheckerIDE(QMainWindow):
     def __init__(self):
@@ -134,7 +133,6 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         # Create text area with syntax highlighting
         self.textEdit = QTextEdit()
         self.textEdit.setMouseTracking(True)
-        self.textEdit.viewport().installEventFilter(self)
 
         # Set larger font
         font = QFont()
@@ -248,31 +246,11 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         text = self.textEdit.toPlainText()
         lines = text.split('\n')
         for i, line in enumerate(lines):
-            error_range = self.highlighter._validate_text(line)
+            error_range, correct_option = self.highlighter._validate_text(line)
             if error_range:
-                self.textEdit.moveCursor(QTextCursor.Start)
-                for _ in range(i):
-                    self.textEdit.moveCursor(QTextCursor.Down)
-                self.textEdit.moveCursor(QTextCursor.Right, QTextCursor.MoveAnchor, error_range[0])
-                self.textEdit.moveCursor(QTextCursor.Right, QTextCursor.KeepAnchor, error_range[1] - error_range[0])
-                self.textEdit.setTextCursor(self.textEdit.textCursor())
                 self.errorDisplay.append(f'Error detected on line {i + 1}: {line}')
-                break
-
-    def eventFilter(self, source, event):
-        if event.type() == event.MouseMove and source is self.textEdit.viewport():
-            cursor = self.textEdit.cursorForPosition(event.pos())
-            cursor.select(cursor.WordUnderCursor)
-            text = cursor.selectedText()
-            if text and self.is_error(text):
-                QToolTip.showText(event.globalPos(), "Syntax error detected")
-            else:
-                QToolTip.hideText()
-        return super().eventFilter(source, event)
-
-    def is_error(self, text):
-        # Simple error detection logic
-        return text.endswith("!") or text.endswith("System.out.println(\"Hello, World!\")")
+                if correct_option:
+                    self.errorDisplay.append(f'Correct option: {correct_option}')
 
     def toggleNightMode(self, state):
         if state == Qt.Checked:

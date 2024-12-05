@@ -1,7 +1,9 @@
 import sys
-import re 
-from PyQt5.QtWidgets import QTextEdit, QApplication, QMainWindow, QVBoxLayout, QLabel, QSplitter, QWidget, QAction, QHBoxLayout, QCheckBox 
-from PyQt5.QtGui import QTextCharFormat, QFont, QSyntaxHighlighter, QIcon, QTextCursor 
+import re
+import os
+from PyQt5.QtWidgets import (QTextEdit, QApplication, QMainWindow, QVBoxLayout, QLabel, QSplitter,
+                             QWidget, QAction, QHBoxLayout, QCheckBox, QFileDialog, QMessageBox)
+from PyQt5.QtGui import QTextCharFormat, QFont, QSyntaxHighlighter, QIcon, QTextCursor
 from PyQt5.QtCore import Qt, QRegExp
 
 
@@ -119,10 +121,12 @@ class JavaSyntaxHighlighter(QSyntaxHighlighter):
 
         return None, None
 
+
 class CodeEditor(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_block_level = 0
+        self.current_file_path = None  # Store current file path
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_BraceLeft:
@@ -135,6 +139,7 @@ class CodeEditor(QTextEdit):
             self.setTextCursor(cursor)
             return
         super().keyPressEvent(event)
+
 
 class JavaSyntaxCheckerIDE(QMainWindow):
     def __init__(self):
@@ -198,11 +203,15 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         newAction = QAction('New', self)
         openAction = QAction('Open', self)
         saveAction = QAction('Save', self)
+        saveAsAction = QAction('Save As', self)
         exitAction = QAction('Exit', self)
+
         fileMenu.addAction(newAction)
         fileMenu.addAction(openAction)
         fileMenu.addAction(saveAction)
+        fileMenu.addAction(saveAsAction)
         fileMenu.addAction(exitAction)
+
         fileToolbar.addAction(newAction)
         fileToolbar.addAction(openAction)
         fileToolbar.addAction(saveAction)
@@ -211,16 +220,18 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         cutAction = QAction('Cut', self)
         copyAction = QAction('Copy', self)
         pasteAction = QAction('Paste', self)
+
         editMenu.addAction(cutAction)
         editMenu.addAction(copyAction)
         editMenu.addAction(pasteAction)
+
         editToolbar.addAction(cutAction)
         editToolbar.addAction(copyAction)
         editToolbar.addAction(pasteAction)
 
         # Add debug action to debug toolbar
-        debugAction = QAction(QIcon('img/debug_icon.png'), 'Debug', self)
-        debugToolbar.addAction(debugAction)
+        runAction = QAction(QIcon('img/run_icon.png'), 'Run', self)
+        debugToolbar.addAction(runAction)
 
         # Create status bar
         self.statusBar().showMessage('Ready')
@@ -240,35 +251,99 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         newAction.triggered.connect(self.newFile)
         openAction.triggered.connect(self.openFile)
         saveAction.triggered.connect(self.saveFile)
+        saveAsAction.triggered.connect(self.saveFileAs)
         exitAction.triggered.connect(self.close)
         cutAction.triggered.connect(self.textEdit.cut)
         copyAction.triggered.connect(self.textEdit.copy)
         pasteAction.triggered.connect(self.textEdit.paste)
-        debugAction.triggered.connect(self.debugCode)
+        runAction.triggered.connect(self.runCode)
 
     def newFile(self):
+        # Check if current file has unsaved changes
+        if self.textEdit.document().isModified():
+            reply = QMessageBox.question(self, 'Unsaved Changes',
+                                         'Do you want to save current file?',
+                                         QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            if reply == QMessageBox.Cancel:
+                return
+            elif reply == QMessageBox.Yes:
+                self.saveFile()
+
         self.textEdit.clear()
         self.errorDisplay.clear()
+        self.textEdit.current_file_path = None
         self.statusBar().showMessage('New file created')
 
     def openFile(self):
-        # Implement file open logic here
-        self.statusBar().showMessage('File opened')
+        # Get filename to open
+        filename, _ = QFileDialog.getOpenFileName(self, 'Open File',
+                                                  os.path.expanduser('~'),
+                                                  'Java Files (*.java);;All Files (*)')
+        if filename:
+            try:
+                with open(filename, 'r') as file:
+                    self.textEdit.setPlainText(file.read())
+                    self.textEdit.current_file_path = filename
+                    self.statusBar().showMessage(f'Opened: {filename}')
+            except Exception as e:
+                QMessageBox.critical(self, 'Error', f'Could not open file: {str(e)}')
 
     def saveFile(self):
-        # Implement file save logic here
-        self.statusBar().showMessage('File saved')
+        # If no previous file path, call save as
+        if not self.textEdit.current_file_path:
+            return self.saveFileAs()
 
-    def debugCode(self):
+        try:
+            with open(self.textEdit.current_file_path, 'w') as file:
+                file.write(self.textEdit.toPlainText())
+            self.textEdit.document().setModified(False)
+            self.statusBar().showMessage(f'Saved: {self.textEdit.current_file_path}')
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Could not save file: {str(e)}')
+            return False
+
+    def saveFileAs(self):
+        filename, _ = QFileDialog.getSaveFileName(self, 'Save File',
+                                                  os.path.expanduser('~'),
+                                                  'Java Files (*.java);;All Files (*)')
+        if filename:
+            try:
+                # Ensure filename has .java extension
+                if not filename.endswith('.java'):
+                    filename += '.java'
+
+                with open(filename, 'w') as file:
+                    file.write(self.textEdit.toPlainText())
+
+                self.textEdit.current_file_path = filename
+                self.textEdit.document().setModified(False)
+                self.statusBar().showMessage(f'Saved: {filename}')
+                return True
+            except Exception as e:
+                QMessageBox.critical(self, 'Error', f'Could not save file: {str(e)}')
+                return False
+        return False
+
+    def runCode(self):
         self.errorDisplay.clear()
         text = self.textEdit.toPlainText()
         lines = text.split('\n')
+        error_count = 0
+
         for i, line in enumerate(lines):
             error_range, correct_option = self.highlighter._validate_text(line)
             if error_range:
-                self.errorDisplay.append(f'Error detected on line {i + 1}: {line}')
+                error_count += 1
+                self.errorDisplay.append(f'Error {error_count} on line {i + 1}: {line}')
                 if correct_option:
-                    self.errorDisplay.append(f'Correct option: {correct_option}')
+                    self.errorDisplay.append(f'Suggestion: {correct_option}\n')
+
+        if error_count == 0:
+            self.errorDisplay.append('No syntax errors detected. Code looks good!')
+            self.statusBar().showMessage('Code syntax check completed successfully')
+        else:
+            self.statusBar().showMessage(f'Found {error_count} syntax errors')
 
     def toggleNightMode(self, state):
         if state == Qt.Checked:
@@ -291,11 +366,13 @@ class JavaSyntaxCheckerIDE(QMainWindow):
         else:
             self.setStyleSheet("")
 
+
 def main():
     app = QApplication(sys.argv)
     ide = JavaSyntaxCheckerIDE()
     ide.show()
     sys.exit(app.exec_())
+
 
 if __name__ == '__main__':
     main()
